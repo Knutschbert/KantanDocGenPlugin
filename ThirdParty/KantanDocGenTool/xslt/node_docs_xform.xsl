@@ -5,7 +5,7 @@ xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 xmlns="http://www.w3.org/TR/REC-html40"
 version="2.0">
 
-	<xsl:output method="html"/>
+	<xsl:output method="text"/>
 
 	<!-- This recursively splits the input string by newline characters, inserting a <br/> at each point. -->
 	<xsl:template name="repNL">
@@ -96,25 +96,19 @@ version="2.0">
 
 	<!-- This is a named template that is reused by both the Inputs and Outputs sections. -->
 	<xsl:template name="parameters">
-		<table>
-			<!-- @TODO: This should be done in the css! -->
-			<colgroup>
-				<col width="25%" />
-				<col width="75%" />
-			</colgroup>
-			<tbody>
-				<xsl:apply-templates/>
-			</tbody>
-		</table>
+		|<xsl:apply-templates/>||
 	</xsl:template>
 
 	<xsl:template match="inputs">
 		<h3 class="title_style">Inputs</h3>
+		|Inputs||
+		|--|--|
 		<xsl:call-template name="parameters" />
 	</xsl:template>
 
 	<xsl:template match="outputs">
-		<h3 class="title_style">Outputs</h3>
+		|Outputs||
+		|--|--|
 		<xsl:call-template name="parameters" />
 	</xsl:template>
 

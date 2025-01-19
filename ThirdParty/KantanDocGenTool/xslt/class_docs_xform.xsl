@@ -5,7 +5,7 @@ xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 xmlns="http://www.w3.org/TR/REC-html40"
 version="2.0">
 
-	<xsl:output method="html"/>
+	<xsl:output method="text"/>
 
 	<!-- Root template -->
 	<xsl:template match="/">
