@@ -39,9 +39,8 @@ version="2.0">
 
     <!-- Root template -->
     <xsl:template match="/">
-	<REMOVEME_TAG>
+        <xsl:text>Output text goes here</xsl:text>
         <xsl:apply-templates/>
-	</REMOVEME_TAG>
     </xsl:template>
 
 	 <!-- Templates to match specific elements in the input XML -->
@@ -80,38 +79,15 @@ version="2.0">
     </xsl:template>
 
     <xsl:template match="inputs">
-        <xsl:text>|Inputs| |&#10;|--|--|&#10;</xsl:text>
+        <xsl:text>|Inputs||&#10;|--|--|&#10;</xsl:text>
         <xsl:call-template name="parameters"/>
     </xsl:template>
 
     <xsl:template match="outputs">
-        <xsl:text>&#10;|Outputs| |&#10;|--|--|&#10;</xsl:text>
+        <xsl:text>&#10;|Outputs||&#10;|--|--|&#10;</xsl:text>
         <xsl:call-template name="parameters"/>
     </xsl:template>
 
-    <xsl:template match="fulltitle">
-        <xsl:text>## fulltitle </xsl:text>
-        <xsl:apply-templates/>
-        <xsl:text>&#10;</xsl:text>
-    </xsl:template>
-	
-    <xsl:template match="class_id">
-        <xsl:text>## class_id</xsl:text>
-        <xsl:apply-templates/>
-        <xsl:text>&#10;</xsl:text>
-    </xsl:template>
-	
-    <xsl:template match="class_name">
-        <xsl:text>## class_name</xsl:text>
-        <xsl:apply-templates/>
-        <xsl:text>&#10;</xsl:text>
-    </xsl:template>
-    <xsl:template match="docs_name">
-        <xsl:text>## docs_name</xsl:text>
-        <xsl:apply-templates/>
-        <xsl:text>&#10;</xsl:text>
-    </xsl:template>
-
     <!-- Unwanted elements (can use "a | b | c") -->
-    <!-- <xsl:template match=" |  |  | "/> -->
+    <xsl:template match="fulltitle | docs_name | class_id | class_name"/>
 </xsl:stylesheet>

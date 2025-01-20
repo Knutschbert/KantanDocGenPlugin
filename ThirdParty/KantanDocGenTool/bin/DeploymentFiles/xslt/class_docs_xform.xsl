@@ -12,40 +12,46 @@ version="2.0">
 		<html>
 			<head>
 				<title><xsl:value-of select="/root/display_name" /></title>
-				<link rel="stylesheet" type="text/css" href="./css/bpdoc.css" />
+				<link rel="stylesheet" type="text/css" href="../css/bpdoc.css" />
 			</head>
 			<body>
 				<div id="content_container">
-					<xsl:apply-templates />
+					<xsl:apply-templates select="/root" />
 				</div>
 			</body>
 		</html>
 	</xsl:template>
-
-	<!-- Templates to match specific elements in the input xml -->
+	
 	<xsl:template match="/root">
+		<a class="navbar_style">
+			<xsl:attribute name="href">../index.html</xsl:attribute>
+			<xsl:value-of select="docs_name" />
+		</a>
+		<a class="navbar_style">&gt;</a>
 		<a class="navbar_style"><xsl:value-of select="display_name" /></a>
 		<h1 class="title_style"><xsl:value-of select="display_name" /></h1>
-		<xsl:apply-templates select="classes" />
+		
+		<xsl:apply-templates select="nodes" />
 	</xsl:template>
 
-	<xsl:template match="classes">
-		<h2 class="title_style">Classes</h2>
+	<!-- Templates to match specific elements in the input xml -->
+	<xsl:template match="nodes">
+		<h2 class="title_style">Nodes</h2>
 		<table>
 			<tbody>
-				<xsl:apply-templates select="class">
-					<xsl:sort select="display_name"/>
+				<xsl:apply-templates select="node">
+					<xsl:sort select="shorttitle"/>
 				</xsl:apply-templates>
 			</tbody>
-		</table>
+		</table>	
 	</xsl:template>
 
-	<xsl:template match="class">
+	<xsl:template match="node">
 		<tr>
 			<td>
 				<a>
-					<xsl:attribute name="href">./<xsl:value-of select="id" />/<xsl:value-of select="id" />.html</xsl:attribute>
-					<xsl:apply-templates select="display_name" />			
+					<xsl:attribute name="href">./nodes/<xsl:value-of select="id" />.html</xsl:attribute>
+					<xsl:apply-templates select="shorttitle" />	
 				</a>
 			</td>
 		</tr>
