@@ -24,6 +24,8 @@ public class KantanDocGen : ModuleRules
                 "InputCore",
                 "Slate",
 				"SlateCore",
+				"Json",
+				"JsonUtilities",
                 "UnrealEd",
                 "PropertyEditor",
                 "EditorStyle",

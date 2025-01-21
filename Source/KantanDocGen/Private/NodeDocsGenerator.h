@@ -9,6 +9,7 @@
 #include "Modules/ModuleManager.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "NodeDocsGenerator.generated.h"
 
 
 class UClass;
@@ -18,6 +19,85 @@ class UEdGraphNode;
 class UK2Node;
 class UBlueprintNodeSpawner;
 class FXmlFile;
+
+// Parameter struct
+USTRUCT(BlueprintType)
+struct FNodeDocsParam
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString Name;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString Type;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString Description;
+
+	FNodeDocsParam() {}
+	FNodeDocsParam(const FString& InName, const FString& InType, const FString& InDescription)
+		: Name(InName), Type(InType), Description(InDescription) {}
+};
+
+// Main node data struct
+USTRUCT(BlueprintType)
+struct FNodeDocsData
+{
+	GENERATED_USTRUCT_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString DocsName;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ClassId;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ClassName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ShortTitle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString FullTitle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString Description;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ImgPath;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString Category;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	TArray<FNodeDocsParam> Inputs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	TArray<FNodeDocsParam> Outputs;
+
+	FNodeDocsData() {}
+};
+
+USTRUCT(BlueprintType)
+struct FNodeDocsClassData
+{
+	GENERATED_USTRUCT_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString DocsName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ClassId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	FString ClassName;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	TArray<FNodeDocsData> Nodes;
+
+	FNodeDocsClassData() {}
+};
 
 class FNodeDocsGenerator
 {
@@ -52,6 +132,8 @@ public:
 	/** Callable from background thread */
 	bool GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingState& State);
 	bool GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& State);
+	bool GenerateNodeJsonDocs(UK2Node* Node, FNodeProcessingState& State);
+	bool GenerateNodeMarkdown(const FNodeDocsData &data, const FString& MarkdownFilePath);
 	/**/
 
 protected:
@@ -84,6 +166,7 @@ public:
 	//
 	double GenerateNodeImageTime = 0.0;
 	double GenerateNodeDocsTime = 0.0;
+	double GenerateNodeJsonDocsTime = 0.0;
 	//
 };
 

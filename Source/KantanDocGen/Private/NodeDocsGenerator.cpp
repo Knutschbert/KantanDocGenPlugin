@@ -143,6 +143,17 @@ void FNodeDocsGenerator::CleanUp()
 	}
 }
 
+// FColor ApplyGamma(FColor Color, float Gamma)
+// {
+// 	float InvGamma = 1.0f / Gamma;
+// 	return FColor(
+// 		(uint8)(pow(Color.R / 255.0f, InvGamma) * 255.0f),
+// 		(uint8)(pow(Color.G / 255.0f, InvGamma) * 255.0f),
+// 		(uint8)(pow(Color.B / 255.0f, InvGamma) * 255.0f),
+// 		Color.A // Alpha channel remains unchanged
+// 	);
+// }
+
 bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingState& State)
 {
 	SCOPE_SECONDS_COUNTER(GenerateNodeImageTime);
@@ -168,22 +179,48 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 		FWidgetRenderer Renderer(bUseGammaCorrection);
 		Renderer.SetIsPrepassNeeded(true);
 		auto RenderTarget = Renderer.DrawWidget(NodeWidget.ToSharedRef(), DrawSize);
+		if (!RenderTarget)
+		{
+			UE_LOG(LogKantanDocGen, Error, TEXT("Failed to create RenderTarget."));
+			return false;
+		}
 
 		auto Desired = NodeWidget->GetDesiredSize();
 	
+		int32 DesiredX = (int32)Desired.X;
+		int32 DesiredY = (int32)Desired.Y;
+		// FIntRect Rect(0, 0, DesiredX, DesiredY);
+		Rect = FIntRect(0, 0, DesiredX, DesiredY);
 		FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
-		Rect = FIntRect(0, 0, (int32)Desired.X, (int32)Desired.Y);
+		if (!RTResource)
+		{
+			UE_LOG(LogKantanDocGen, Error, TEXT("Failed to get RenderTarget resource."));
+			return false;
+		}
 		FReadSurfaceDataFlags ReadPixelFlags(RCM_UNorm);
-		ReadPixelFlags.SetLinearToGamma(true); // @TODO: is this gamma correction, or something else?
+		ReadPixelFlags.SetLinearToGamma(false); // @TODO: is this gamma correction, or something else?
 
-		PixelData = MakeUnique<TImagePixelData<FColor>>(FIntPoint((int32)Desired.X, (int32)Desired.Y));
-		PixelData->Pixels.SetNumUninitialized(Desired.X * Desired.Y);
-
+		PixelData = MakeUnique<TImagePixelData<FColor>>(FIntPoint(DesiredX, DesiredY));
+		PixelData->Pixels.SetNumUninitialized(DesiredX* DesiredY);
 		if(RTResource->ReadPixelsPtr(PixelData->Pixels.GetData(), ReadPixelFlags, Rect) == false)
 		{
 			UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to read pixels for node image."));
 			return false;
 		}
+		
+		if (RenderTarget)
+		{
+			RenderTarget->ReleaseResource();
+			RenderTarget->MarkPendingKill(); // Optional: Ensure it's marked for GC
+			RenderTarget = nullptr;
+		}
+
+		// const float DesiredGamma = 2.2f; // Set your desired gamma value
+		// UE_LOG(LogKantanDocGen, Warning, TEXT("Gamma %f"), RTResource->GetDisplayGamma());
+		// for (FColor& Pixel : PixelData->Pixels)
+		// {
+		// 	Pixel = ApplyGamma(Pixel, DesiredGamma);
+		// }
 
 		return true;
 	});
@@ -202,9 +239,10 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 	ImageTask->PixelData = MoveTemp(PixelData);
 	ImageTask->Filename = ScreenshotSaveName;
 	ImageTask->Format = EImageFormat::PNG;
-	ImageTask->CompressionQuality = (int32)EImageCompressionQuality::Default;
+	ImageTask->CompressionQuality = (int32)EImageCompressionQuality::Uncompressed;
 	ImageTask->bOverwriteFile = true;
-	ImageTask->PixelPreProcessors.Add(TAsyncAlphaWrite<FColor>(255));
+	ImageTask->PixelPreProcessors.Add(TAsyncGammaCorrect<FColor>(1/2.2f));
+	// ImageTask->PixelPreProcessors.Add(TAsyncAlphaWrite<FColor>(255));
 	
 	if(ImageTask->RunTask())
 	{
@@ -243,12 +281,150 @@ inline FXmlNode* AppendChildCDATA(FXmlNode* Parent, FString const& Name, FString
 	return Parent->GetChildrenNodes().Last();
 }
 
+/*
+* from edgraphschema
+*/
+
+const UScriptStruct* VectorStruct = nullptr;
+const UScriptStruct* RotatorStruct = nullptr;
+const UScriptStruct* TransformStruct = nullptr;
+const UScriptStruct* LinearColorStruct = nullptr;
+const UScriptStruct* ColorStruct = nullptr;
+
+FText TerminalTypeToText(const FName Category, const FName SubCategory, UObject* SubCategoryObject, bool bIsWeakPtr)
+{
+	FText PropertyText;
+
+	if (VectorStruct == nullptr)
+	{
+		VectorStruct = TBaseStructure<FVector>::Get();
+		RotatorStruct = TBaseStructure<FRotator>::Get();
+		TransformStruct = TBaseStructure<FTransform>::Get();
+		LinearColorStruct = TBaseStructure<FLinearColor>::Get();
+		ColorStruct = TBaseStructure<FColor>::Get();
+	}
+if (SubCategory != UEdGraphSchema_K2::PSC_Bitmask && SubCategoryObject != nullptr)
+	{
+		if (Category == UEdGraphSchema_K2::PC_Byte)
+		{
+			FFormatNamedArguments Args;
+			Args.Add(TEXT("EnumName"), FText::FromString(SubCategoryObject->GetName()));
+			PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "EnumAsText", "{EnumName} Enum"), Args);
+		}
+		else
+		{
+			FString SubCategoryObjName;
+			if (UField* SubCategoryField = Cast<UField>(SubCategoryObject))
+			{
+				// SubCategoryObjName = SubCategoryField->GetDisplayNameText().ToString();
+				SubCategoryObjName = SubCategoryObject->GetName();
+			}
+			else
+			{
+				SubCategoryObjName = SubCategoryObject->GetName();
+			}
+
+			if (!bIsWeakPtr)
+			{
+				UClass* PSCOAsClass = Cast<UClass>(SubCategoryObject);
+
+				if (PSCOAsClass != nullptr)
+				{
+					SubCategoryObjName = PSCOAsClass->GetPrefixCPP() + SubCategoryObjName;
+				}
+					// UE_LOG(LogTemp, Error, TEXT("%s prefix: %s subobj_prefix: %s"), *SubCategoryObjName, PSCOAsClass->GetPrefixCPP(), SubCategoryObject->GetClass()->GetPrefixCPP());
+				const bool bIsInterface = PSCOAsClass && PSCOAsClass->HasAnyClassFlags(CLASS_Interface);
+
+				FFormatNamedArguments Args;
+				// Args.Add(TEXT("ObjectName"), FText::FromString(FName::NameToDisplayString(SubCategoryObjName, /*bIsBool =*/false)));
+				// TODO: don't make links here, make an info struct for the pin
+				// SubCategoryObjName = SubCategoryObject->GetClass()->GetPrefixCPP() + SubCategoryObjName;
+				Args.Add(TEXT("ObjectName"), FText::FromString(L"[["+SubCategoryObjName+L"]]"));
+
+				// Don't display the category for "well-known" struct types
+				if (Category == UEdGraphSchema_K2::PC_Struct && (SubCategoryObject == VectorStruct || SubCategoryObject == RotatorStruct || SubCategoryObject == TransformStruct))
+				{
+					PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "ObjectAsTextWithoutCategory", "{ObjectName}"), Args);
+				}
+				// If this is a raw UObject reference don't display Object twice
+				else if (((Category == UEdGraphSchema_K2::PC_Object) || (Category == UEdGraphSchema_K2::PC_SoftObject)) && (SubCategoryObject == UObject::StaticClass()))
+				{
+					Args.Add(TEXT("Category"), UEdGraphSchema_K2::GetCategoryText(Category));
+					PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "ObjectAsJustCategory", "{Category}"), Args);
+				}
+				else
+				{
+					Args.Add(TEXT("Category"), (!bIsInterface ? UEdGraphSchema_K2::GetCategoryText(Category) : UEdGraphSchema_K2::GetCategoryText(UEdGraphSchema_K2::PC_Interface)));
+					PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "ObjectAsText", "{ObjectName} {Category}"), Args);
+				}
+			}
+			else
+			{
+				FFormatNamedArguments Args;
+				Args.Add(TEXT("Category"), FText::FromName(Category));
+				Args.Add(TEXT("ObjectName"), FText::FromString(SubCategoryObject->GetClass()->GetPrefixCPP() + SubCategoryObjName));
+				PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "WeakPtrAsText", "{ObjectName} Weak {Category}"), Args);
+			}
+		}
+	}
+	else if (!SubCategory.IsNone())
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Category"), UEdGraphSchema_K2::GetCategoryText(Category));
+		// Args.Add(TEXT("ObjectName"), FText::FromString(FName::NameToDisplayString(SubCategory.ToString(), false)));
+		Args.Add(TEXT("ObjectName"), FText::FromString(SubCategory.ToString()));
+		PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "ObjectAsText", "{ObjectName} {Category}"), Args);
+	}
+	else
+	{
+		PropertyText = UEdGraphSchema_K2::GetCategoryText(Category);
+	}
+
+	return PropertyText;
+}
+
+FText TypeToText(const FEdGraphPinType& Type)
+{
+	FText PropertyText = TerminalTypeToText(Type.PinCategory, Type.PinSubCategory, Type.PinSubCategoryObject.Get(), Type.bIsWeakPointer);
+
+	if (Type.IsMap())
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("KeyTitle"), PropertyText);
+		FText ValueText = TerminalTypeToText(Type.PinValueType.TerminalCategory, Type.PinValueType.TerminalSubCategory, Type.PinValueType.TerminalSubCategoryObject.Get(), Type.PinValueType.bTerminalIsWeakPointer);
+		Args.Add(TEXT("ValueTitle"), ValueText);
+		PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "MapAsText", "Map of {KeyTitle}s to {ValueTitle}s"), Args);
+	}
+	else if (Type.IsSet())
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("PropertyTitle"), PropertyText);
+		PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "SetAsText", "Set of {PropertyTitle}s"), Args);
+	}
+	else if (Type.IsArray())
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("PropertyTitle"), PropertyText);
+		PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "ArrayAsText", "Array of {PropertyTitle}s"), Args);
+	}
+	else if (Type.bIsReference)
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("PropertyTitle"), PropertyText);
+		PropertyText = FText::Format(NSLOCTEXT("NodeDocsGen", "PropertyByRef", "{PropertyTitle} (by ref)"), Args);
+	}
+
+	return PropertyText;
+}
+
+/*
+* /from edgraphschema
+*/
 // For K2 pins only!
 bool ExtractPinInformation(UEdGraphPin* Pin, FString& OutName, FString& OutType, FString& OutDescription)
 {
 	FString Tooltip;
 	Pin->GetOwningNode()->GetPinHoverText(*Pin, Tooltip);
-
 	if(!Tooltip.IsEmpty())
 	{
 		// @NOTE: This is based on the formatting in UEdGraphSchema_K2::ConstructBasicPinTooltip.
@@ -281,7 +457,8 @@ bool ExtractPinInformation(UEdGraphPin* Pin, FString& OutName, FString& OutType,
 		OutName = Pin->Direction == EEdGraphPinDirection::EGPD_Input ? TEXT("In") : TEXT("Out");
 	}
 
-	OutType = UEdGraphSchema_K2::TypeToText(Pin->PinType).ToString();
+	OutType = TypeToText(Pin->PinType).ToString();
+	// OutType = UEdGraphSchema_K2::TypeToText(Pin->PinType).ToString();
 
 	return true;
 }
@@ -341,9 +518,165 @@ inline bool ShouldDocumentPin(UEdGraphPin* Pin)
 	return !Pin->bHidden;
 }
 
+
+#include "JsonUtilities/Public/JsonObjectConverter.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+
+
+
+bool FNodeDocsGenerator::GenerateNodeMarkdown(const FNodeDocsData &NodeData, const FString& MarkdownFilePath)
+{
+	FString MarkdownContent;
+
+	// Set Tags
+	MarkdownContent += TEXT("---\n");
+	MarkdownContent += FString::Printf(TEXT("OwnerClass: \"[[%s]]\"\n"), *NodeData.ClassId);
+	if (!NodeData.Category.IsEmpty())
+		MarkdownContent += FString::Printf(TEXT("NodeCategory: %s\n"), *NodeData.Category);
+	MarkdownContent += FString::Printf(TEXT("aliases:\n  - %s\n"), *NodeData.Description);
+	MarkdownContent += TEXT("---\n");
+
+	// Add Image
+	if (!NodeData.ImgPath.IsEmpty())
+		MarkdownContent += FString::Printf(TEXT("## Preview\n\n![Image](%s)\n"), *NodeData.ImgPath);
+	// MarkdownContent += FString::Printf(TEXT("## Preview\n![Image](%s)\n"), *NodeData.ImgPath);
+	
+	// Add Inputs Table
+	MarkdownContent += TEXT("## IO\n");
+	if (NodeData.Inputs.Num() > 0)
+	{
+		// MarkdownContent += TEXT("## Inputs\n| Name | Type |\n|------|------|\n");
+		MarkdownContent += TEXT("| **Input** | **Type** |\n|------|------|\n");
+		for (const FNodeDocsParam& Input : NodeData.Inputs)
+		{
+			MarkdownContent += FString::Printf(TEXT("| %s | %s |\n"),
+											   *Input.Name, *Input.Type);
+		}
+		MarkdownContent += TEXT("\n");
+	}
+	
+	// Add Outputs Table
+	if (NodeData.Outputs.Num() > 0)
+	{
+		// MarkdownContent += TEXT("## Outputs\n| Name | Type |\n|-------|------|\n");
+		MarkdownContent += TEXT("| **Output** | **Type** |\n|-------|------|\n");
+		for (const FNodeDocsParam& Output : NodeData.Outputs)
+		{
+			MarkdownContent += FString::Printf(TEXT("| %s | %s |\n"),
+											   *Output.Name, *Output.Type);
+		}
+	}
+
+	// Save to file
+	if (!FFileHelper::SaveStringToFile(MarkdownContent, *MarkdownFilePath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to save Markdown file: %s"), *MarkdownFilePath);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Markdown file saved successfully: %s"), *MarkdownFilePath);
+	return true;
+}
+
+bool FNodeDocsGenerator::GenerateNodeJsonDocs(UK2Node* Node, FNodeProcessingState& State)
+{
+	auto BPClass = Node->GetBlueprintClassFromNode();
+	SCOPE_SECONDS_COUNTER(GenerateNodeJsonDocsTime);
+	auto NodeDocsPath = State.ClassDocsPath / TEXT("nodes");
+	FString DocFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".json"));
+	FString MarkdownFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".md"));
+	FNodeDocsData NodeData;
+	NodeData.DocsName = DocsTitle;
+	
+	auto AssociatedClass = MapToAssociatedClass(Node, nullptr);
+	if (AssociatedClass == nullptr)
+	{
+		// UE_LOG(LogTemp, Error, TEXT("Failed to find associatedClass for %s"), *DocFilePath);
+		NodeData.ClassId = State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("id"))->GetContent();
+		NodeData.ClassName = State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("display_name"))->GetContent();
+		NodeData.ClassId.RemoveFromStart(TEXT("<![CDATA["));
+		NodeData.ClassId.RemoveFromEnd(TEXT("]]>"));
+		// return false;
+	}
+	else
+	{
+		NodeData.ClassId = GetClassDocId(AssociatedClass);
+		NodeData.ClassName = FBlueprintEditorUtils::GetFriendlyClassDisplayName(AssociatedClass).ToString();
+	}
+
+	NodeData.ClassId.RemoveFromStart(TEXT("SKEL_"));
+	// NodeData.ClassId.RemoveFromEnd(TEXT("_C"));
+	
+	NodeData.ShortTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString().TrimEnd();
+
+	FString NodeFullTitle = Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
+	auto TargetIdx = NodeFullTitle.Find(TEXT("Target is "), ESearchCase::CaseSensitive);
+	if(TargetIdx != INDEX_NONE)
+	{
+		NodeFullTitle = NodeFullTitle.Left(TargetIdx).TrimEnd();
+	}
+	NodeData.FullTitle = NodeFullTitle;
+
+	FString NodeDesc = Node->GetTooltipText().ToString();
+	TargetIdx = NodeDesc.Find(TEXT("Target is "), ESearchCase::CaseSensitive);
+	if(TargetIdx != INDEX_NONE)
+	{
+		NodeDesc = NodeDesc.Left(TargetIdx).TrimEnd();
+	}
+	NodeData.Description = NodeDesc;
+
+	NodeData.ImgPath = State.RelImageBasePath / State.ImageFilename;
+	NodeData.Category = Node->GetMenuCategory().ToString();
+
+	for(auto Pin : Node->Pins)
+		if(ShouldDocumentPin(Pin))
+		{
+			FString PinName, PinType, PinDesc;
+			ExtractPinInformation(Pin, PinName, PinType, PinDesc);
+			if(Pin->Direction == EEdGraphPinDirection::EGPD_Input)
+				NodeData.Inputs.Add(FNodeDocsParam(PinName, PinType, PinDesc));
+			else if(Pin->Direction == EEdGraphPinDirection::EGPD_Output)
+				NodeData.Outputs.Add(FNodeDocsParam(PinName, PinType, PinDesc));
+		}
+
+	GenerateNodeMarkdown(NodeData, MarkdownFilePath);
+	
+	if (false)
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+		if (!FJsonObjectConverter::UStructToJsonObject(FNodeDocsData::StaticStruct(), &NodeData, JsonObject.ToSharedRef(), 0, 0))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to convert data to JSON."));
+			return false;
+		}
+
+		// Serialize JSON to string
+		FString JsonOutputString;
+		TSharedRef<TJsonWriter<>> JsonWriter = TJsonWriterFactory<>::Create(&JsonOutputString);
+		if (!FJsonSerializer::Serialize(JsonObject.ToSharedRef(), JsonWriter))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to serialize JSON."));
+			return false;
+		}
+
+		// Save JSON to file
+		if (!FFileHelper::SaveStringToFile(JsonOutputString, *DocFilePath))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to save JSON file: %s"), *DocFilePath);
+			return false;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("JSON saved successfully: %s"), *DocFilePath);		
+	}
+	return true;
+}
+
 bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& State)
 {
 	SCOPE_SECONDS_COUNTER(GenerateNodeDocsTime);
+
+	// GenerateNodeJsonDocs(Node, State);
 
 	auto NodeDocsPath = State.ClassDocsPath / TEXT("nodes");
 	FString DocFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".xml"));

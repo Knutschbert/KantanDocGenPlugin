@@ -250,9 +250,16 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 				}
 
 				// Generate doc
-				if(!Current->DocGen->GenerateNodeDocs(NodeInst, NodeState))
+				// if(!Current->DocGen->GenerateNodeDocs(NodeInst, NodeState))
+				// {
+				// 	UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node doc xml!"))
+				// 	continue;
+				// }
+
+				// Generate json
+				if(!Current->DocGen->GenerateNodeJsonDocs(NodeInst, NodeState))
 				{
-					UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node doc xml!"))
+					UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node doc JSON!"))
 					continue;
 				}
 
